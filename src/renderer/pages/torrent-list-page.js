@@ -1,18 +1,304 @@
 const React = require('react')
 const prettyBytes = require('prettier-bytes')
+const request = require('request')
 
 const Checkbox = require('material-ui/Checkbox').default
 const LinearProgress = require('material-ui/LinearProgress').default
 
 const TorrentSummary = require('../lib/torrent-summary')
 const TorrentPlayer = require('../lib/torrent-player')
-const {dispatcher} = require('../lib/dispatcher')
+const {dispatch, dispatcher} = require('../lib/dispatcher')
+// const log = require('../../main/log')
 
 module.exports = class TorrentList extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      movies: [],
+      shows: [],
+      value: '',
+      jawBone: null,
+      jawBoneSeason: 1,
+      isLoading: false
+    };
+
+    // This binding is necessary to make `this` work in the callback
+    this.handleKeyPress = this.handleKeyPress.bind(this);
+    this.handleChange = this.handleChange.bind(this);
+    this.handleTileClick = this.handleTileClick.bind(this);
+    this.handleShowTileClick = this.handleShowTileClick.bind(this);
+    this.getJawBoneContent = this.getJawBoneContent.bind(this);
+    this.onSeasonChange = this.onSeasonChange.bind(this);
+    this.setLoaderAndSearch = this.setLoaderAndSearch.bind(this);
+    this.search = this.search.bind(this);
+  }
+
+  handleChange(event) {
+    this.setState({value: event.target.value});
+  }
+
+
+  handleKeyPress(e) {
+    // console.log(e.target.value);
+    if(e.key === 'Enter') {
+          this.setLoaderAndSearch(e.target.value)
+    }
+  }
+
+  setLoaderAndSearch(query) {
+    this.setState({isLoading: true}, function(){
+      this.search(query);
+    });
+  }
+
+  search(query) {
+    request('http://10.0.0.4:5000/search?q=' + query, { json: true }, (err, res, body) => {
+      if (err) { return console.log(err); }
+      // console.log(body);
+      this.setState({movies: body.movies, shows: body.tv, isLoading: false});
+    });
+    // const self = this;
+    // request.get(`http://10.0.0.3:5051/search?q=${query}`)
+    //   .on('response', function(resp) {
+    //     resp.resume();
+    //     resp.on('end', () => {
+    //       if (!resp.complete) {
+    //         console.error(
+    //           'The connection was terminated while the message was still being sent');
+
+    //     self.setState({movies: [], shows: [], isLoading: false});
+    //       }
+
+    //     self.setState({movies: body.movies, shows: body.tv, isLoading: false});
+    //     });
+    //   }).on('error', function(err) {
+    //     console.error(err);
+    //     self.setState({movies: [], shows: [], isLoading: false});
+    //   });
+    
+  }
+
+  handleTileClick(movie) {
+    // console.log(movie)
+    if(movie.magnets.length > 0) {
+      dispatch('addTorrent', movie.magnets[0].magnet_url)
+    }
+  }
+
+  handleShowTileClick(e, show) {
+    // console.log(e, show);
+    this.setState({jawBone: show, jawBoneSeason: 1});
+  }
+
+  getJawBoneContent(rowItems) {
+    if(this.state.jawBone) {
+      // console.log('jawBone', this.state.jawBone);
+      const id = this.state.jawBone.title_id
+      const show = this.state.jawBone
+
+      for (var i = rowItems.length - 1; i >= 0; i--) {
+        if(rowItems[i].title_id == id) {
+          // console.log('found match for jawBone ')
+          return (<div key={id} className="jawcontent">
+            <div className="tile__media">
+              <select>
+                {show.seasons.map((season, idx) => 
+                  <option>Season {idx+1}</option>
+                )}
+              </select>
+            </div>
+          </div>)
+        }
+      }
+    }
+
+    return null
+  }
+
+  handleEpisodeTileClick(e, episode) {
+    console.log("Episode link clicked");
+    if(episode.magnets.length > 0) {
+      dispatch('addTorrent', episode.magnets[0].magnet_url)
+    }
+  }
+
+  onSeasonChange(event) {
+    const season = event.target.value
+    this.setState({jawBoneSeason: season})
+  }
+
   render () {
     const state = this.props.state
 
     const contents = []
+    contents.push(
+      <div key='search-bar' className='search-box'>
+        <div className='search-input'>
+          <input placeholder='Titles, genre' value={state.value} onChange={this.handleChange} onKeyPress={this.handleKeyPress}/>
+        </div>
+      </div>
+    )
+
+    // console.log("DEBUG: ", this.state);
+    if (this.state.isLoading) {
+      contents.push(<div key="fullPageLoader" className="full-loader">Loading...</div>);
+      return (
+        <div key='torrent-list' className='torrent-list'>
+          {contents}
+        </div>
+      );
+    }
+
+    // console.log('all movies', this.state.movies);
+    if(this.state.movies) {
+      const movieItems = this.state.movies.map((movie, key) =>
+          <div key={movie.title_id} className={movie.magnets.length ? "tile" : "tile no-magnet"} onClick={(e) => this.handleTileClick(movie)}>
+            <div className="tile__media">
+              <img className="tile__img" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/70390/show-2.jpg" alt=""  />
+            </div>
+            <div className="tile__details">
+              <div className="tile__title">
+                {movie.title} ({movie.year})
+              </div>
+            </div>
+          </div>
+      )
+      const perRow = 4
+      var index = 0
+      const movieRows = []
+      var rowItems = []
+      for(item in movieItems) {
+        rowItems.push(movieItems[item])
+        if (index % perRow == 3) {
+          movieRows.push(
+            <div className="row">
+              <div className="row__inner">
+              {rowItems}
+              </div>
+            </div>
+          )
+          rowItems = []
+        }
+        index = index + 1
+      }
+      movieRows.push(
+        <div className="row">
+          <div className="row__inner">
+          {rowItems}
+          </div>
+        </div>
+      )
+
+      // console.log(movieRows)
+
+      contents.push(
+        <div key='results'>
+          {movieRows}
+        </div>
+      )
+    } else {
+      contents.push(<div key='blank'>No results</div>)
+    }
+
+    if(this.state.shows) {
+      const showItems = this.state.shows.map((show, key) =>
+          <div key={show.title_id} className="tile" onClick={(e) => this.handleShowTileClick(e, show)}>
+            <div className="tile__media">
+              <img className="tile__img" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/70390/show-2.jpg" alt=""  />
+            </div>
+            <div className="tile__details">
+              <div className="tile__title">
+                {show.title} ({show.year})
+              </div>
+            </div>
+          </div>
+      )
+      
+      const perRow = 4
+      var index = 0
+      const showRows = []
+      var rowItems = []
+      
+      var jawBoneContent = null;
+      for(item in showItems) {
+
+        if(this.state.jawBone) {
+          // console.log('jawBone', this.state.jawBone);
+          const id = this.state.jawBone.title_id
+          const show = this.state.jawBone
+
+          if(this.state.shows[item].title_id == id) {
+            // console.log('found match for jawBone', show.seasons)
+            // console.log('selected season is', this.state.jawBoneSeason, show.seasons[this.state.jawBoneSeason])
+            const episodes = show.seasons[this.state.jawBoneSeason].episodes.map((episode, key) => episode[Object.keys(episode)[0]])
+            const episodeItems = episodes.map((episode, key) =>
+                <div key={episode.id} className={episode.magnets.length ? "tile" : "tile no-magnet"} onClick={(e) => this.handleEpisodeTileClick(e, episode)}>
+                  <div className="tile__media">
+                    <img className="tile__img" src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/70390/show-3.jpg" alt=""  />
+                  </div>
+                  <div className="tile__details">
+                    <div className="tile__title">
+                      {episode.title} ({episode.run_time} min)
+                    </div>
+                  </div>
+                </div>
+            )
+            jawBoneContent = (<div key={id} className="jawcontent">
+              <div className="tile__media">
+                <select onChange={this.onSeasonChange}>
+                  {Object.keys(show.seasons).map((season, idx) => 
+                    <option value={season}>Season {season}</option>
+                  )}
+                </select>
+                <div className="row">
+                  <div className="row__inner">
+                  {episodeItems}
+                  </div>
+                </div>
+              </div>
+            </div>)
+          }
+        }
+
+        rowItems.push(showItems[item])
+        if (index % perRow == 3) {
+          showRows.push(
+            <div className="row">
+              <div className="row__inner">
+              {rowItems}
+              </div>
+              <div className="jawBoneContent">
+              {jawBoneContent}
+              </div>
+            </div>
+          )
+          rowItems = []
+          jawBoneContent = null
+        }
+        index = index + 1
+      }
+      showRows.push(
+        <div className="row">
+          <div className="row__inner">
+          {rowItems}
+          </div>
+          <div className="jawBoneContent">
+            {jawBoneContent}
+          </div>
+        </div>
+      )
+
+      // console.log(showRows)
+
+      contents.push(
+        <div key='show-results'>
+          {showRows}
+        </div>
+      )
+    } else {
+      contents.push(<div key='blank'>No shows</div>)
+    }
+
     if (state.downloadPathStatus === 'missing') {
       contents.push(
         <div key='torrent-missing-path'>

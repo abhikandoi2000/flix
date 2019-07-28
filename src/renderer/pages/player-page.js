@@ -117,6 +117,7 @@ function renderMedia (state) {
 
   // Create the <audio> or <video> tag
   const MediaTagName = state.playing.type
+
   const mediaTag = (
     <MediaTagName
       src={Playlist.getCurrentLocalURL(state)}
